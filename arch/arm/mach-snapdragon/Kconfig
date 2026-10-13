@@ -42,4 +42,13 @@ config SYS_CONFIG_NAME
 	  Based on this option include/configs/<CONFIG_SYS_CONFIG_NAME>.h header
 	  will be used for board configuration.
 
+config QCOM_PMI632_CHARGE
+	bool "Keep a PMI632 charging and show the charger state"
+	depends on PMIC_QCOM && CYCLIC
+	help
+	  Pet the PMI632 charger watchdog while U-Boot runs, so that charging
+	  does not stop after two minutes in the menu, let a wall charger
+	  draw 1.5 A, and draw a battery symbol in the top right corner of
+	  the screen while a charger is plugged in.
+
 endif

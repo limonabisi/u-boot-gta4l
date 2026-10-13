@@ -23,4 +23,6 @@ void qcom_configure_capsule_updates(void);
 void qcom_configure_capsule_updates(void) {}
 #endif /* EFI_HAVE_CAPSULE_SUPPORT */
 
+void qcom_pmi632_charge_init(void);
+
 #endif /* __QCOM_PRIV_H__ */

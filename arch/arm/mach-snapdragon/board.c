@@ -201,6 +201,110 @@ static void qcom_psci_fixup(void *fdt)
 		log_err("Failed to delete /psci node: %d\n", ret);
 }
 
+/*
+ * ABL writes the kernel command line into /chosen/bootargs of the DT it hands
+ * over. Besides what is stored in the boot image header it adds things only
+ * it knows: the panel it found (msm_drm.dsi_display0=), the boot mode
+ * (androidboot.mode=charger when started by a charger), the serial number.
+ * Saved before relocation, when the ABL DT is still where ABL left it.
+ */
+static char prevbl_cmdline[2048] __section(".data") = { 0 };
+
+static void qcom_save_prevbl_cmdline(void *fdt)
+{
+	const char *ba;
+	int node, len;
+
+	node = fdt_path_offset(fdt, "/chosen");
+	if (node < 0)
+		return;
+
+	ba = fdt_getprop(fdt, node, "bootargs", &len);
+	if (!ba || len <= 0)
+		return;
+
+	strlcpy(prevbl_cmdline, ba, sizeof(prevbl_cmdline));
+}
+
+/* Does the command line already carry an option with this name? */
+static bool cmdline_has(const char *cmdline, const char *opt, size_t optlen)
+{
+	const char *p = cmdline;
+
+	while (*p) {
+		while (*p == ' ')
+			p++;
+		if (!*p)
+			break;
+		if (!strncmp(p, opt, optlen))
+			return true;
+		p += strcspn(p, " ");
+	}
+
+	return false;
+}
+
+/*
+ * The kernel gets ABL's whole command line, as it would have had ABL booted
+ * it directly: the boot image's own command line plus what only ABL knows
+ * (the panel it found, androidboot.mode=charger, the serial number). Options
+ * U-Boot itself sets in "bootargs" come first and are not repeated.
+ */
+const char *board_fdt_chosen_bootargs(const struct fdt_property *fdt_ba)
+{
+	static char out[4096];
+	const char *base = env_get("bootargs");
+	const char *p;
+	size_t n;
+
+	if (!prevbl_cmdline[0]) {
+		if (!base && fdt_ba && fdt32_to_cpu(fdt_ba->len) > 0)
+			base = fdt_ba->data;
+		return base;
+	}
+
+	strlcpy(out, base ? base : "", sizeof(out));
+
+	for (p = prevbl_cmdline; *p; p += n) {
+		const char *eq;
+
+		while (*p == ' ')
+			p++;
+		n = strcspn(p, " ");
+		if (!n)
+			break;
+
+		/* Compare up to and including '=' (whole word if there is none) */
+		eq = memchr(p, '=', n);
+		if (cmdline_has(out, p, eq ? (size_t)(eq - p + 1) : n))
+			continue;
+
+		if (strlen(out) + n + 2 > sizeof(out))
+			break;
+		if (out[0])
+			strlcat(out, " ", sizeof(out));
+		strncat(out, p, n);
+	}
+
+	return out;
+}
+
+/* Started by a charger plugged into the powered-off tablet? */
+static void qcom_set_prevbl_mode(void)
+{
+	const char *m = strstr(prevbl_cmdline, "androidboot.mode=");
+	char mode[32];
+	size_t n;
+
+	if (!m)
+		return;
+	m += strlen("androidboot.mode=");
+	n = min(strcspn(m, " "), sizeof(mode) - 1);
+	memcpy(mode, m, n);
+	mode[n] = 0;
+	env_set("prevbl_mode", mode);
+}
+
 /* We support booting U-Boot with an internal DT when running as a first-stage bootloader
  * or for supporting quirky devices where it's easier to leave the downstream DT in place
  * to improve ABL compatibility. Otherwise, we use the DT provided by ABL.
@@ -240,6 +344,10 @@ int board_fdt_blob_setup(void **fdtp)
 
 	if (ret < 0)
 		panic("No valid memory ranges found!\n");
+
+	/* Keep ABL's kernel command line: it names the panel and the boot mode */
+	if (external_valid)
+		qcom_save_prevbl_cmdline(external_fdt);
 
 	/* If we have an external FDT, it can only have come from the Android bootloader. */
 	if (external_valid)
@@ -584,6 +692,11 @@ int board_late_init(void)
 
 	configure_env();
 	qcom_late_init();
+
+	qcom_set_prevbl_mode();
+
+	if (IS_ENABLED(CONFIG_QCOM_PMI632_CHARGE))
+		qcom_pmi632_charge_init();
 
 	qcom_show_boot_source();
 	/* Configure the dfu_string for capsule updates */
