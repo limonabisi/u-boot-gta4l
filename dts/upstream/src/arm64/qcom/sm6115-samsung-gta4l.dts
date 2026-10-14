@@ -58,7 +58,10 @@
 		#size-cells = <2>;
 		ranges;
 
-		bootargs = "console=tty0 clk_ignore_unused pd_ignore_unused fbcon=rotate:1 nr_cpus=1 nokaslr loglevel=7 pmos.stowaway systemd.gpt_auto=0 pmos.root=/dev/mmcblk1p1 pmos_rootfsopts=defaults";
+		/*
+		 * No bootargs here: ABL would put them in front of the boot
+		 * image's command line, and U-Boot hands ABL's line to Linux.
+		 */
 
 		stdout-path = "framebuffer0";
 

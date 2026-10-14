@@ -226,19 +226,20 @@ static void qcom_save_prevbl_cmdline(void *fdt)
 	strlcpy(prevbl_cmdline, ba, sizeof(prevbl_cmdline));
 }
 
-/* Does the command line already carry an option with this name? */
-static bool cmdline_has(const char *cmdline, const char *opt, size_t optlen)
+/* Does the command line already carry exactly this option? */
+static bool cmdline_has_word(const char *cmdline, const char *opt, size_t len)
 {
 	const char *p = cmdline;
 
 	while (*p) {
+		size_t n;
+
 		while (*p == ' ')
 			p++;
-		if (!*p)
-			break;
-		if (!strncmp(p, opt, optlen))
+		n = strcspn(p, " ");
+		if (n == len && !strncmp(p, opt, len))
 			return true;
-		p += strcspn(p, " ");
+		p += n;
 	}
 
 	return false;
@@ -266,17 +267,17 @@ const char *board_fdt_chosen_bootargs(const struct fdt_property *fdt_ba)
 	strlcpy(out, base ? base : "", sizeof(out));
 
 	for (p = prevbl_cmdline; *p; p += n) {
-		const char *eq;
-
 		while (*p == ' ')
 			p++;
 		n = strcspn(p, " ");
 		if (!n)
 			break;
 
-		/* Compare up to and including '=' (whole word if there is none) */
-		eq = memchr(p, '=', n);
-		if (cmdline_has(out, p, eq ? (size_t)(eq - p + 1) : n))
+		/*
+		 * Skip only an option given in full already: some, like
+		 * console=, may appear more than once.
+		 */
+		if (cmdline_has_word(out, p, n))
 			continue;
 
 		if (strlen(out) + n + 2 > sizeof(out))
