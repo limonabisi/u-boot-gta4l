@@ -9,8 +9,9 @@
  * USB 2.0 default of 500 mA (the stock settings of the Galaxy Tab A7).
  *
  * A battery symbol in the top right corner of the (possibly rotated)
- * screen shows the charger state: a lightning bolt while charging, filled
- * when the charger reports the battery full, nothing without a cable.
+ * screen shows the charger state: a lightning bolt and three of four bars
+ * while charging, four bars when the charger reports the battery full, "!"
+ * and one bar when charging stopped, nothing without a cable.
  */
 
 #define LOG_CATEGORY LOGC_BOARD
@@ -165,17 +166,29 @@ static enum chg_state chg_state(void)
 
 /* --- drawing, in the coordinates of the screen as the console shows it --- */
 
-#define ICON_W		80	/* body, without the terminal */
-#define ICON_H		44
+#define SIGN_W		20	/* bolt or "!" left of the battery */
+#define SIGN_GAP	2
+#define ICON_W		64	/* body, without the terminal */
+#define ICON_H		40
 #define ICON_LINE	4
 #define NUB_W		6
-#define NUB_H		18
+#define NUB_H		16
+#define BARS		4
+#define BAR_W		10
+#define BAR_STEP	13
 #define ICON_MARGIN	16
 
 #define COL_BLACK	0x000000
 #define COL_WHITE	0xffffff
 #define COL_GREEN	0x30d050
 #define COL_YELLOW	0xf0c020
+#define COL_DIM		0x303030
+
+/* 4x16 exclamation mark, drawn at twice the size */
+static const char *const excl[] = {
+	".##.", "####", "####", "####", "####", "####", "####", "####",
+	".##.", ".##.", ".##.", "....", "....", "####", "####", "####",
+};
 
 /* 10x16 lightning bolt, drawn at twice the size */
 static const char *const bolt[] = {
@@ -240,12 +253,51 @@ static void fill(struct video_priv *vp, int x0, int y0, int w, int h, u32 col)
 			put_px(vp, x, y, col);
 }
 
+/*
+ * The pixels are written straight into the frame buffer, so tell the video
+ * uclass which part changed; with CONFIG_VIDEO_DAMAGE only damaged areas are
+ * flushed from the cache to the display.
+ */
+static void damage(struct udevice *vdev, struct video_priv *vp, int lx, int ly,
+		   int w, int h)
+{
+	switch (vp->rot) {
+	case 1:
+		video_damage(vdev, vp->xsize - (ly + h), lx, h, w);
+		break;
+	case 2:
+		video_damage(vdev, vp->xsize - (lx + w), vp->ysize - (ly + h), w, h);
+		break;
+	case 3:
+		video_damage(vdev, ly, vp->ysize - (lx + w), h, w);
+		break;
+	default:
+		video_damage(vdev, lx, ly, w, h);
+		break;
+	}
+}
+
+static void glyph(struct video_priv *vp, const char *const *g, int w, int h,
+		  int x0, int y0, u32 col)
+{
+	int x, y;
+
+	for (y = 0; y < h; y++)
+		for (x = 0; x < w; x++)
+			if (g[y][x] == '#')
+				fill(vp, x0 + 2 * x, y0 + 2 * y, 2, 2, col);
+}
+
+/*
+ * A battery of four bars, right of a sign: bolt and three bars while
+ * charging, four bars when full, "!" and one bar when charging stopped.
+ */
 static void chg_draw(enum chg_state st)
 {
 	static int last = -1;
 	struct udevice *vdev;
 	struct video_priv *vp;
-	int lw, x0, y0, x, y, bx, by;
+	int lw, x0, y0, bx, i, lit;
 	u32 col;
 
 	if (uclass_first_device_err(UCLASS_VIDEO, &vdev))
@@ -254,12 +306,17 @@ static void chg_draw(enum chg_state st)
 
 	/* The menu clears the screen now and then, so redraw every time */
 	lw = (vp->rot & 1) ? vp->ysize : vp->xsize;
-	x0 = lw - ICON_MARGIN - NUB_W - ICON_W;
+	x0 = lw - ICON_MARGIN - NUB_W - ICON_W - SIGN_GAP - SIGN_W;
 	y0 = ICON_MARGIN;
+	bx = x0 + SIGN_W + SIGN_GAP;
 
 	if (st == CHG_NONE) {
-		if (last != CHG_NONE)
-			fill(vp, x0, y0, ICON_W + NUB_W, ICON_H, COL_BLACK);
+		if (last != CHG_NONE) {
+			fill(vp, x0, y0, SIGN_W + SIGN_GAP + ICON_W + NUB_W,
+			     ICON_H, COL_BLACK);
+			damage(vdev, vp, x0, y0, SIGN_W + SIGN_GAP + ICON_W + NUB_W,
+			       ICON_H);
+		}
 		last = st;
 		video_sync(vdev, false);
 		return;
@@ -268,26 +325,27 @@ static void chg_draw(enum chg_state st)
 
 	col = st == CHG_STOPPED ? COL_YELLOW : COL_GREEN;
 
+	/* sign */
+	fill(vp, x0, y0, SIGN_W, ICON_H, COL_BLACK);
+	if (st == CHG_CHARGING)
+		glyph(vp, bolt, 10, 16, x0, y0 + (ICON_H - 32) / 2, COL_WHITE);
+	else if (st == CHG_STOPPED)
+		glyph(vp, excl, 4, 16, x0 + 6, y0 + (ICON_H - 32) / 2, COL_YELLOW);
+
 	/* outline and terminal */
-	fill(vp, x0, y0, ICON_W, ICON_LINE, col);
-	fill(vp, x0, y0 + ICON_H - ICON_LINE, ICON_W, ICON_LINE, col);
-	fill(vp, x0, y0, ICON_LINE, ICON_H, col);
-	fill(vp, x0 + ICON_W - ICON_LINE, y0, ICON_LINE, ICON_H, col);
-	fill(vp, x0 + ICON_W, y0 + (ICON_H - NUB_H) / 2, NUB_W, NUB_H, col);
+	fill(vp, bx, y0, ICON_W, ICON_LINE, col);
+	fill(vp, bx, y0 + ICON_H - ICON_LINE, ICON_W, ICON_LINE, col);
+	fill(vp, bx, y0, ICON_LINE, ICON_H, col);
+	fill(vp, bx + ICON_W - ICON_LINE, y0, ICON_LINE, ICON_H, col);
+	fill(vp, bx + ICON_W, y0 + (ICON_H - NUB_H) / 2, NUB_W, NUB_H, col);
 
-	/* inside: filled when full, a bolt while charging */
-	fill(vp, x0 + ICON_LINE, y0 + ICON_LINE, ICON_W - 2 * ICON_LINE,
-	     ICON_H - 2 * ICON_LINE, st == CHG_FULL ? col : COL_BLACK);
+	/* bars */
+	lit = st == CHG_FULL ? BARS : st == CHG_STOPPED ? 1 : BARS - 1;
+	for (i = 0; i < BARS; i++)
+		fill(vp, bx + 2 * ICON_LINE + i * BAR_STEP, y0 + 6, BAR_W,
+		     ICON_H - 12, i < lit ? col : COL_DIM);
 
-	if (st != CHG_FULL) {
-		bx = x0 + (ICON_W - 20) / 2;
-		by = y0 + (ICON_H - 32) / 2 + 1;
-		for (y = 0; y < 16; y++)
-			for (x = 0; x < 10; x++)
-				if (bolt[y][x] == '#')
-					fill(vp, bx + 2 * x, by + 2 * y, 2, 2,
-					     st == CHG_STOPPED ? COL_YELLOW : COL_WHITE);
-	}
+	damage(vdev, vp, x0, y0, SIGN_W + SIGN_GAP + ICON_W + NUB_W, ICON_H);
 
 	video_sync(vdev, false);
 }
