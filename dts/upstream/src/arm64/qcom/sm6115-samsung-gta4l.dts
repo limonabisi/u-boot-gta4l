@@ -1,0 +1,505 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR BSD-3-Clause)
+/*
+ * Copyright (c) 2026 V6lhost <v6lhost@proton.me>
+ */
+
+/dts-v1/;
+
+#include "sm6115.dtsi"
+#include "pm6125.dtsi"
+#include "pmi632.dtsi"
+#include <dt-bindings/usb/pd.h>
+
+/delete-node/ &cdsp_sec_mem;
+/delete-node/ &pil_adsp_mem;
+/delete-node/ &pil_ipa_fw_mem;
+/delete-node/ &pil_ipa_gsi_mem;
+/delete-node/ &pil_gpu_mem;
+/delete-node/ &rmtfs_mem;
+/* Remove the sm6115.dtsi placeholder (bootloader-filled, size 0) in
+ * favour of the real gta4l memory layout defined below. */
+/delete-node/ &{/memory@80000000};
+
+/ {
+	model = "Samsung Galaxy Tab A7 10.4 (2020)";
+	compatible = "samsung,gta4l", "qcom,sm6115";
+	qcom,msm-id = <0x1bc 0x10000>;
+	#address-cells = <0x02>;
+	#size-cells = <0x02>;
+	qcom,board-id = <0x1000b 0x00>;
+
+	gpio-keys {
+		compatible = "gpio-keys";
+		label = "gpio-keys";
+		pinctrl-names = "default";
+		pinctrl-0 = <&vol_up_n>;
+
+		vol_up {
+			label = "vol_up";
+			gpios = <&pm6125_gpios 5 GPIO_ACTIVE_LOW>;
+			linux,input-type = <1>;
+			linux,code = <115>; /* KEY_VOLUMEUP */
+			debounce-interval = <15>;
+		};
+	};
+
+	memory@40000000 {
+		device_type = "memory";
+		reg = <0x0 0x40000000 0x0 0xc0000000>;
+	};
+
+	aliases {
+		serial0 = &uart4;
+	};
+
+	chosen {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		bootargs = "console=tty0 clk_ignore_unused pd_ignore_unused fbcon=rotate:1 nr_cpus=1 nokaslr loglevel=7 pmos.stowaway systemd.gpt_auto=0 pmos.root=/dev/mmcblk1p1 pmos_rootfsopts=defaults";
+
+		stdout-path = "framebuffer0";
+
+		framebuffer0: framebuffer@5c000000 {
+			compatible = "simple-framebuffer";
+			reg = <0x0 0x5c000000 0x0 (2000 * 1200 * 4)>;
+			width = <1200>;
+			height = <2000>;
+			stride = <(1200 * 4)>;
+			format = "a8r8g8b8";
+			rot = <1>;
+		};
+	};
+
+	reserved-memory {
+		pil_adsp_mem: memory@53800000 {
+			reg = <0x0 0x53800000 0x0 0x1e00000>;
+			no-map;
+		};
+
+		pil_ipa_fw_mem: memory@55600000 {
+			reg = <0x0 0x55600000 0x0 0x10000>;
+			no-map;
+		};
+
+		pil_ipa_gsi_mem: memory@55610000 {
+			reg = <0x0 0x55610000 0x0 0x5000>;
+			no-map;
+		};
+
+		pil_gpu_mem: memory@55615000 {
+			reg = <0x0 0x55615000 0x0 0x2000>;
+			no-map;
+		};
+
+		ramoops@71300000 {
+			compatible = "ramoops";
+			reg = <0x0 0x71300000 0x0 0x100000>;
+			record-size = <0x40000>;
+			pmsg-size = <0x40000>;
+			console-size = <0x40000>;
+			ftrace-size = <0x40000>;
+		};
+
+		ss_plog_mem: memory@71100000 {
+			reg = <0x0 0x71100000 0x0 0x200000>;
+			no-map;
+		};
+
+		sec_debug_mem: memory@71400000 {
+			reg = <0x0 0x71400000 0x0 0x800000>;
+			no-map;
+		};
+	};
+};
+
+&pmi632_typec {
+	status = "okay";
+
+	connector {
+		compatible = "usb-c-connector";
+
+		power-role = "dual";
+		data-role = "dual";
+		self-powered;
+
+		typec-power-opmode = "default";
+		pd-disable;
+
+		ports {
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			port@0 {
+				reg = <0>;
+				pmi632_hs_in: endpoint {
+					remote-endpoint = <&usb_dwc3_hs>;
+				};
+			};
+
+			port@1 {
+				reg = <1>;
+				pmi632_ss_in: endpoint {
+					remote-endpoint = <&usb_qmpphy_out>;
+				};
+			};
+		};
+	};
+};
+
+&pmi632_vbus {
+	regulator-min-microamp = <500000>;
+	regulator-max-microamp = <1000000>;
+	status = "okay";
+};
+
+&pm6125_gpios {
+	vol_up_n: vol-up-n-state {
+		pins = "gpio5";
+		function = "normal";
+		power-source = <0>;
+		bias-pull-up;
+		input-enable;
+	};
+};
+
+&rpm_requests {
+	regulators-0 {
+		compatible = "qcom,rpm-pm6125-regulators";
+
+		pm6125_s6a: s6 {
+			regulator-min-microvolt = <304000>;
+			regulator-max-microvolt = <1456000>;
+		};
+
+		pm6125_s7a: s7 {
+			regulator-min-microvolt = <1280000>;
+			regulator-max-microvolt = <2040000>;
+		};
+
+		pm6125_s8a: s8 {
+			regulator-min-microvolt = <1064000>;
+			regulator-max-microvolt = <1304000>;
+		};
+
+		pm6125_l1a: l1 {
+			regulator-min-microvolt = <952000>;
+			regulator-max-microvolt = <1152000>;
+		};
+
+		pm6125_l4a: l4 {
+			regulator-min-microvolt = <488000>;
+			regulator-max-microvolt = <1000000>;
+		};
+
+		pm6125_l5a: l5 {
+			regulator-min-microvolt = <1648000>;
+			/* 3.056V capped to 2.96V for SDHCI */
+			regulator-max-microvolt = <2960000>;
+			regulator-allow-set-load;
+			/* Broken hw, this one can't be turned off or SDHCI will break! */
+			regulator-always-on;
+		};
+
+		pm6125_l6a: l6 {
+			regulator-min-microvolt = <576000>;
+			regulator-max-microvolt = <656000>;
+		};
+
+		pm6125_l7a: l7 {
+			regulator-min-microvolt = <1200000>;
+			regulator-max-microvolt = <1304000>;
+		};
+
+		pm6125_l8a: l8 {
+			regulator-min-microvolt = <400000>;
+			regulator-max-microvolt = <728000>;
+		};
+
+		pm6125_l9a: l9 {
+			regulator-min-microvolt = <1800000>;
+			regulator-max-microvolt = <2000000>;
+			regulator-always-on;
+		};
+
+		pm6125_l10a: l10 {
+			regulator-min-microvolt = <1704000>;
+			regulator-max-microvolt = <1904000>;
+		};
+
+		pm6125_l11a: l11 {
+			regulator-min-microvolt = <1704000>;
+			regulator-max-microvolt = <1952000>;
+			regulator-allow-set-load;
+		};
+
+		pm6125_l12a: l12 {
+			regulator-min-microvolt = <1624000>;
+			regulator-max-microvolt = <1984000>;
+		};
+
+		pm6125_l13a: l13 {
+			regulator-min-microvolt = <1504000>;
+			regulator-max-microvolt = <1952000>;
+		};
+
+		pm6125_l14a: l14 {
+			regulator-min-microvolt = <1704000>;
+			regulator-max-microvolt = <1904000>;
+		};
+
+		pm6125_l15a: l15 {
+			regulator-min-microvolt = <2920000>;
+			regulator-max-microvolt = <3232000>;
+		};
+
+		pm6125_l16a: l16 {
+			regulator-min-microvolt = <1704000>;
+			regulator-max-microvolt = <1904000>;
+		};
+
+		pm6125_l17a: l17 {
+			regulator-min-microvolt = <1152000>;
+			regulator-max-microvolt = <1384000>;
+		};
+
+		pm6125_l18a: l18 {
+			regulator-min-microvolt = <1104000>;
+			regulator-max-microvolt = <1312000>;
+		};
+
+		pm6125_l19a: l19 {
+			regulator-min-microvolt = <1624000>;
+			regulator-max-microvolt = <3304000>;
+		};
+
+		pm6125_l20a: l20 {
+			regulator-min-microvolt = <1624000>;
+			regulator-max-microvolt = <3304000>;
+		};
+
+		pm6125_l21a: l21 {
+			regulator-min-microvolt = <2400000>;
+			regulator-max-microvolt = <3600000>;
+		};
+
+		pm6125_l22a: l22 {
+			regulator-min-microvolt = <2952000>;
+			/* 3.304V capped to 2.96V for SDHCI */
+			regulator-max-microvolt = <2960000>;
+			regulator-allow-set-load;
+			/* Broken hw, this one can't be turned off or SDHCI will break! */
+			regulator-always-on;
+		};
+
+		pm6125_l23a: l23 {
+			regulator-min-microvolt = <3200000>;
+			regulator-max-microvolt = <3400000>;
+		};
+
+		pm6125_l24a: l24 {
+			regulator-min-microvolt = <2704000>;
+			regulator-max-microvolt = <3600000>;
+			regulator-allow-set-load;
+		};
+	};
+};
+
+&mdss {
+	status = "okay";
+};
+
+&gpu {
+	status = "okay";
+
+	zap-shader {
+		firmware-name = "qcom/qrb4210/a610_zap.mbn";
+	};
+};
+
+&mdss_dsi0 {
+	vdda-supply = <&pm6125_l18a>;
+	status = "okay";
+
+	panel: panel@0 {
+		compatible = "samsung,gta4l-nt36523-lide-hsd", "novatek,nt36523w";
+		reg = <0>;
+
+		reset-gpios = <&tlmm 82 GPIO_ACTIVE_LOW>;
+		vddio-supply = <&pm6125_l9a>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&te_irq &mdss_dsi_n>;
+
+		rotation = <180>;
+
+		port {
+			panel_in: endpoint {
+				remote-endpoint = <&mdss_dsi0_out>;
+			};
+		};
+	};
+};
+
+&mdss_dsi0_out {
+	data-lanes = <0 1 2 3>;
+	remote-endpoint = <&panel_in>;
+};
+
+&mdss_dsi0_phy {
+	status = "okay";
+};
+
+&sdhc_1 {
+	non-removable;
+	mmc-hs200-1_8v;
+	status = "okay";
+};
+
+&sdc2_state_off {
+	cd-pins {
+		pins = "gpio88";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-disable;
+	};
+};
+
+&sdc2_state_on {
+	cd-pins {
+		pins = "gpio88";
+		function = "gpio";
+		drive-strength = <2>;
+		bias-pull-up;
+	};
+};
+
+&sdhc_2 {
+	pinctrl-0 = <&sdc2_state_on>;
+	pinctrl-1 = <&sdc2_state_off>;
+	pinctrl-names = "default", "sleep";
+
+	cd-gpios = <&tlmm 88 GPIO_ACTIVE_HIGH>;
+
+	vmmc-supply = <&pm6125_l22a>;
+	vqmmc-supply = <&pm6125_l5a>;
+
+	status = "okay";
+};
+
+&soc {
+	/* Hack for passing bootloader checks */
+	spi@4a80000 {
+		reg = <0x0 0x04a80000 0x0 0x4000>;
+		status = "disabled";
+
+		himax_ts@0 {
+		status = "disabled";
+		};
+	};
+};
+
+&tlmm {
+	gpio-reserved-ranges = <0 4>, <14 4>;
+
+	ts_rst_n: ts-rst-n-state {
+		pins = "gpio74";
+		function = "gpio";
+		drive-strength = <8>;
+		bias-pull-up;
+	};
+
+	ts_int_n: ts-int-n-state {
+		pins = "gpio80";
+		function = "gpio";
+		drive-strength = <8>;
+		bias-pull-up;
+	};
+
+	te_irq: te-irq-state {
+		pins = "gpio81";
+		function = "mdp_vsync";
+		drive-strength = <2>;
+		bias-pull-down;
+	};
+
+	mdss_dsi_n: mdss-dsi-n-state {
+		pins = "gpio82";
+		function = "gpio";
+		drive-strength = <8>;
+		bias-disable;
+	};
+};
+
+&uart4 {
+	compatible = "qcom,geni-uart";
+	status = "okay";
+};
+
+&usb {
+	status = "okay";
+	qcom,select-utmi-as-pipe-clk;
+};
+
+&usb_dwc3 {
+	phys = <&usb_hsphy>;
+	phy-names = "usb2-phy";
+	maximum-speed = "high-speed";
+};
+
+&usb_dwc3_hs {
+	remote-endpoint = <&pmi632_hs_in>;
+};
+
+&usb_hsphy {
+	vdd-supply = <&pm6125_l4a>;
+	vdda-pll-supply = <&pm6125_l12a>;
+	vdda-phy-dpdm-supply = <&pm6125_l15a>;
+	status = "okay";
+};
+
+&usb_qmpphy {
+	status = "disabled";
+};
+
+&usb_qmpphy_out {
+	remote-endpoint = <&pmi632_ss_in>;
+};
+&qupv3_id_0 {
+	status = "okay";
+};
+
+&gpi_dma0 {
+	status = "okay";
+};
+
+&pm6125_rtc {
+	status = "okay";
+};
+
+&i2c2 {
+	status = "okay";
+	clock-frequency = <400000>;
+
+	novatek@63 {
+		compatible = "novatek,NVT-ts";
+		reg = <0x63>;
+		interrupt-parent = <&tlmm>;
+		interrupts = <50 IRQ_TYPE_LEVEL_LOW>;
+		reset-gpios = <&tlmm 47 GPIO_ACTIVE_LOW>;
+	};
+};
+
+&remoteproc_adsp {
+	status = "okay";
+	firmware-name = "qcom/qcm2290/adsp.mbn";
+};
+
+&adsp_smp2p_out {
+	status = "okay";
+};
+
+&adsp_smp2p_in {
+	status = "okay";
+};
